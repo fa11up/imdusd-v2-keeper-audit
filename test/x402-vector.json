@@ -1,0 +1,44 @@
+{
+  "source": "black-box/sender/x402.mjs signPayment (viem), production sender; regenerate only if that code changes",
+  "key": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  "challenge": {
+    "resource": {
+      "url": "https://api.imd.fun/requests/abc/submit",
+      "description": "oracle.group",
+      "mimeType": "application/json"
+    },
+    "resourceUrl": "https://api.imd.fun/requests/abc/submit",
+    "requesterScopeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:1",
+        "amount": "1000000000000000000",
+        "asset": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "payTo": "0x4e0fa57bde726079356537e2f34d671e9f41adbc",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "assetTransferMethod": "permit2"
+        }
+      }
+    ],
+    "quote": {
+      "id": "11111111-2222-4333-8444-555555555555",
+      "quoteHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "action": "oracle.group",
+      "expiresAt": 1800000000,
+      "payment": {
+        "network": "eip155:1",
+        "asset": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "amount": "1000000000000000000",
+        "payTo": "0x4e0fa57bde726079356537e2f34d671e9f41adbc",
+        "decimals": 18
+      }
+    }
+  },
+  "nonce": "3178606371220444580254889784552217078325058402586211561867463090413301597959",
+  "deadline": 1790000300,
+  "paymentHeader": "eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJzaWduYXR1cmUiOiIweGM1Y2VkNDNmY2QzNWY0NjQ5ZGMzMjg0ZGRjOWFhYmNiODI1NTg2NWQzNGQ5ZGYwMjM4NjQzMzViNWNkMTQyYzk1ZDU5NzJkMTljYjFlYjQ4YTQyNTkyNDU5OTY0YmQ2ZmViMjI1ZmEyMDc3NTE0MzcyYjBjMzQ0N2U5ZDgwNWExMWMiLCJwZXJtaXQyQXV0aG9yaXphdGlvbiI6eyJmcm9tIjoiMHg3MDk5Nzk3MEM1MTgxMmRjM0EwMTBDN2QwMWI1MGUwZDE3ZGM3OUM4IiwicGVybWl0dGVkIjp7InRva2VuIjoiMHhkMzRhOTliYzBmNjdhZTFiYmQ2M2M2NjBlNmQwYjBkZDAzZTI2M2I3IiwiYW1vdW50IjoiMTAwMDAwMDAwMDAwMDAwMDAwMCJ9LCJzcGVuZGVyIjoiMHg0MDIwODVjMjQ4RWVBMjdEOTJFOGIzMGIyQzU4ZWQwN2Y5RTIwMDAxIiwibm9uY2UiOiIzMTc4NjA2MzcxMjIwNDQ0NTgwMjU0ODg5Nzg0NTUyMjE3MDc4MzI1MDU4NDAyNTg2MjExNTYxODY3NDYzMDkwNDEzMzAxNTk3OTU5IiwiZGVhZGxpbmUiOiIxNzkwMDAwMzAwIiwid2l0bmVzcyI6eyJ0byI6IjB4NGUwZmE1N2JkZTcyNjA3OTM1NjUzN2UyZjM0ZDY3MWU5ZjQxYWRiYyIsInZhbGlkQWZ0ZXIiOiIwIn19fSwicmVzb3VyY2UiOnsidXJsIjoiaHR0cHM6Ly9hcGkuaW1kLmZ1bi9yZXF1ZXN0cy9hYmMvc3VibWl0IiwiZGVzY3JpcHRpb24iOiJvcmFjbGUuZ3JvdXAiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSwiYWNjZXB0ZWQiOnsic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiZWlwMTU1OjEiLCJhbW91bnQiOiIxMDAwMDAwMDAwMDAwMDAwMDAwIiwiYXNzZXQiOiIweGQzNGE5OWJjMGY2N2FlMWJiZDYzYzY2MGU2ZDBiMGRkMDNlMjYzYjciLCJwYXlUbyI6IjB4NGUwZmE1N2JkZTcyNjA3OTM1NjUzN2UyZjM0ZDY3MWU5ZjQxYWRiYyIsIm1heFRpbWVvdXRTZWNvbmRzIjozMDAsImV4dHJhIjp7ImFzc2V0VHJhbnNmZXJNZXRob2QiOiJwZXJtaXQyIn19fQ==",
+  "quoteSignature": "0xd4a8578181182e19493d92b1eb3e11781d00fbe08dd18cd6eff6e76f54ebf4a26c0ab563645e72ece4e07f792fd97cabf9cfcddc9a07ed04a1d7cb6f4b28dfb01b",
+  "amount": "1000000000000000000"
+}

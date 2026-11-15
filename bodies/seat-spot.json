@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "question": "At the last block of the pinned 24-hour window on Ethereum mainnet, what is the spot price of an identity.md seat (ERC-721 collection 0x0000ec93127baa929e58e97dd0095a2bfb38ec1d): the lower of the median of the latest sales of the last five distinct seats sold in the window and the lowest live on-chain ask of the two seat strategies, in wei of native ETH (ETH plus WETH paid by the buyer)?",
+  "chainId": 1,
+  "window": {
+    "hours": 24
+  },
+  "answerType": "uint256",
+  "evidence": "chain",
+  "toleranceBps": 0,
+  "definitions": {
+    "recipe": "nft-sale-median with collection 0x0000ec93127baa929e58e97dd0095a2bfb38ec1d, markets Seaport 1.6 0x0000000000000068f116a894984e2db1123eb395, Seaport 1.5 0x00000000000000adc04c56bf30ac9d3c0aaf14dc and Blur v2 0xb2ecfe4e4d61f8790bbb9de2d1259b9e2410cea5, quote WETH 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2, mode spot, spotStat median5, no anchor.",
+    "asks": "askers 0x80271ce20184e38f4afe90d4ca134304d197aca2 and 0x0000198c940d8cd70cb9acec5e3af8216ac57d2f, askFunction function nftForSale(uint256) view returns (uint256), askSince 25090085: every seat an asker received since that block and still owns at the window's last block, priced by that view there; 0 means unlisted.",
+    "exclude": "Exclude these wallets, whose trades are not price discovery: the IMDSTR strategy 0x80271ce20184e38f4afe90d4ca134304d197aca2 (relists at 1.2x), the IMDFrens strategy 0x0000198c940d8cd70cb9acec5e3af8216ac57d2f (relists at 1.5x) and the Hive seat vault 0x44bdd06d3b0ee3dda1aebba41411e4d05c2b5e7f.",
+    "figure": "The figure is the number of distinct seats whose sale survived the filters.",
+    "sanity": "A seat sells for on the order of 1e18 wei (one ETH), so a result below 1e17 or above 1e19 is a pricing error.",
+    "refusal": "If no sale survives the filters (and, for a spot, no asker holds a priced seat) there is no price: report inability rather than answering 0."
+  },
+  "panelSize": 100,
+  "quorum": 51,
+  "validForSeconds": 86400
+}

@@ -1,0 +1,7 @@
+node_modules/
+config.js
+deployment.json
+state/
+.env
+*.log
+test/fork/.work/

@@ -1,0 +1,14 @@
+{
+  "name": "imdusd-v2-keeper",
+  "private": true,
+  "type": "module",
+  "description": "The imdUSD v2 mainnet keeper. Report-only by default.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "once": "node keeper.mjs --once",
+    "fork:up": "test/fork/up.sh",
+    "fork:e2e": "node test/fork/e2e.mjs && node test/fork/duties.mjs",
+    "fork:duties": "node test/fork/duties.mjs"
+  },
+  "dependencies": { "ethers": "^5.7.2" }
+}

@@ -1,0 +1,124 @@
+{
+ "hash": "0xea2b86e2438451d9a11b84969ecb19275a2f782a7c40069a6b7736810cd4a0b4",
+ "parentHash": "0x70e8852833c4f785d20725cff6c2d787b110deb2222289bb75c37e5b79d63270",
+ "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+ "miner": "0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97",
+ "stateRoot": "0xa4842beca3eb49cba12ae261d456d4a1e8fdf0a18a41ba1c051c033a6d95bc19",
+ "transactionsRoot": "0xe4a0b046477b0eccd1036cfdeca51fd5f6e5fac3c21187c2481517a09a80f256",
+ "receiptsRoot": "0xc76259187f2c66608c804b5c944e5477564f95a4093f79fb1c77bd887d5e21d1",
+ "logsBloom": "0x7effff5deffd3ffffffffffffffdffeeffffbfff5ff7bfdfffffffbfff5fff7fffdfffffffff4967faffdaffffeff7dffffdffffdfffffbdffffffebffff3bbfffdffdfdfffdfbfdffefffdfbfffb7ff3dfadfff56fedfe6ffffffd5fdf7d77fff7f7ff9ffffffffdeffc7fffeffbfffef7feffbffeff7bd799fdffffbffffffdaf2dff9ddfbef9dffbfeeffdffafdbfffffbdfff7dfaff9feffffffff9f7bfffffffefffffaffefeff9fdfefffffdfbeffdf3fd7bffe57ffffbfffffffb7afffdb3df7f6fde7fff7ffffffff9fa7ffdbff7befff7f7faff7fdfffbbff7fffb7fdffefdbffeffffbefffdbefffeefffffffffdbffffffedffedeffbfffffffff",
+ "difficulty": "0x0",
+ "number": "0x192f1fa",
+ "gasLimit": "0x392a1e7",
+ "gasUsed": "0x2a8eea4",
+ "timestamp": "0x6af74317",
+ "extraData": "0x546974616e2028746974616e6275696c6465722e78797a29",
+ "mixHash": "0xe7be379c74671ab881f22e98f2cd024b85322b27254f14eed108696b5dc0e3d4",
+ "nonce": "0x0000000000000000",
+ "baseFeePerGas": "0xde45132",
+ "withdrawalsRoot": "0xa1b559b3028fcb50895f4d87857edb0215eb732dd9f24a7de55aaee60f681735",
+ "blobGasUsed": "0xa0000",
+ "excessBlobGas": "0xb6eaf60",
+ "parentBeaconBlockRoot": "0x4d39af36675204d9cc2cb1f8f2c74e0acf4b01e2002de5f7fb0a73c0502d12c7",
+ "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ "size": "0x3f5eb",
+ "uncles": [],
+ "withdrawals": [
+  {
+   "index": "0x8f0328b",
+   "validatorIndex": "0x1975e3",
+   "address": "0x2ccd87ad79498e8740e353e0c9fc04adc3c095d2",
+   "amount": "0xbf7907"
+  },
+  {
+   "index": "0x8f0328c",
+   "validatorIndex": "0x1975e4",
+   "address": "0x1afa9e901eca08db59f24800478524bfaab3d560",
+   "amount": "0xbf911e"
+  },
+  {
+   "index": "0x8f0328d",
+   "validatorIndex": "0x1975e5",
+   "address": "0x20a7f46d59816bbc0852fb2a1175aa2b76d9a5a4",
+   "amount": "0xbf7924"
+  },
+  {
+   "index": "0x8f0328e",
+   "validatorIndex": "0x1975e6",
+   "address": "0xec0e08f094781536135d0c953d2f559c906c2f13",
+   "amount": "0xbf5174"
+  },
+  {
+   "index": "0x8f0328f",
+   "validatorIndex": "0x1975e7",
+   "address": "0xa334b88fa06045deb2a16c903eabde102c844258",
+   "amount": "0xbf7134"
+  },
+  {
+   "index": "0x8f03290",
+   "validatorIndex": "0x1975e8",
+   "address": "0xa3dcce124278398da0657069bd33f079d9db5d95",
+   "amount": "0xbf7924"
+  },
+  {
+   "index": "0x8f03291",
+   "validatorIndex": "0x1975e9",
+   "address": "0x7cfe505a26dde71536a6450a970b84ad61342ff7",
+   "amount": "0xbf88d6"
+  },
+  {
+   "index": "0x8f03292",
+   "validatorIndex": "0x1975ea",
+   "address": "0xac94e6ef87146cd53a6861deb9943828cae90a91",
+   "amount": "0xbf4b8e"
+  },
+  {
+   "index": "0x8f03293",
+   "validatorIndex": "0x1975eb",
+   "address": "0x85f531f94207be41aca8d086636e1fc70668bebb",
+   "amount": "0xbf910f"
+  },
+  {
+   "index": "0x8f03294",
+   "validatorIndex": "0x1975ec",
+   "address": "0x2f57167cbcc4817df7bae1dc3b92a5c96f466856",
+   "amount": "0xbf910e"
+  },
+  {
+   "index": "0x8f03295",
+   "validatorIndex": "0x1975ed",
+   "address": "0x2982919ac20138e008744417eafe241c1ad81561",
+   "amount": "0xbf813e"
+  },
+  {
+   "index": "0x8f03296",
+   "validatorIndex": "0x1975ee",
+   "address": "0x81af2143917c545b18e246c8918c0e6af2798eda",
+   "amount": "0xbf71a0"
+  },
+  {
+   "index": "0x8f03297",
+   "validatorIndex": "0x1975ef",
+   "address": "0x1e13e98ad8047d14f6184137cf6bd3ba8a658c26",
+   "amount": "0xbf815b"
+  },
+  {
+   "index": "0x8f03298",
+   "validatorIndex": "0x1975f0",
+   "address": "0xf161cad6fb06633d1dbbcace07b1a2882148368d",
+   "amount": "0x3d4f0bd"
+  },
+  {
+   "index": "0x8f03299",
+   "validatorIndex": "0x1975f1",
+   "address": "0x0552fa510b3b6cc71967b17435d382e1d1abec09",
+   "amount": "0xbf3afe"
+  },
+  {
+   "index": "0x8f0329a",
+   "validatorIndex": "0x1975f2",
+   "address": "0x79ff3183693df56814491e96b9e0f476e5d2159e",
+   "amount": "0xbf49b6"
+  }
+ ]
+}
