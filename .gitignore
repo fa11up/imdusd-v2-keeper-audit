@@ -5,3 +5,5 @@ state/
 .env
 *.log
 test/fork/.work/
+state-4663/
+deployment-*.json

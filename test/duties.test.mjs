@@ -63,9 +63,14 @@ test("guards hold the leaf's band and the answer we expect, and a gap counts its
 
 // ---------------------------------------------------------------- buy / no buy: the price (design C: the spot is proven, not bought)
 
-const fall = (x = {}) => fallDecision({
-  median: P, spot: P, pool: P.mul(90).div(100), skewBps: 500, triggerBps: 500, atRisk: true, lastBuyAt: 0, now: 100_000, minGapSeconds: 1800, hadOpenOrder: false, ...x,
-});
+// Audit wave 4 Q4: the reference is Pricer.quote().low, read on chain; here the Pricer's own rule (test/lib/pricer-model.mjs) stands in,
+// with converged, fresh, proven legs and the live leg = the pool (one unit).
+const { pricerLow } = await import("./lib/pricer-model.mjs");
+const fall = (x = {}) => {
+  const a = { median: P, spot: P, pool: P.mul(90).div(100), skewBps: 500, triggerBps: 500, atRisk: true, lastBuyAt: 0, now: 100_000, minGapSeconds: 1800, hadOpenOrder: false, ...x };
+  const q = pricerLow({ m: a.median.toString(), s: a.spot.toString(), skewBps: a.skewBps });
+  return fallDecision({ quote: { priced: q.priced, low: q.low.toString() }, live: a.pool, ...a });
+};
 
 test("falls buy; rises and flat never do, stale or not", () => {
   assert.equal(fall().buy, true);
@@ -83,7 +88,7 @@ test("the reference is what loans are measured at: the lower leg within skew, th
   const within = fall({ median: P, spot: P.mul(97).div(100), pool: P.mul(94).div(100) });
   assert.equal(within.kind, "no-fall", "3% under the lower leg");
   const apart = fall({ median: P, spot: P.mul(80).div(100), pool: P.mul(85).div(100) });
-  assert.equal(apart.buy, true, "legs apart: loans are measured at the higher leg (the median), 15% above the pool");
+  assert.equal(apart.buy, true, "legs apart, median above an unclamped (attested) median: loans are measured at the median (max(s, min(m, attested)) = m), 15% above the pool");
   const spotHigh = fall({ median: P.mul(80).div(100), spot: P, pool: P.mul(85).div(100) });
   assert.equal(spotHigh.buy, true, "a stale-low median under a proven spot: loans are measured at the proven spot, 15% above the pool");
 });
@@ -265,8 +270,14 @@ test("crash between the latch and the payment: the restart never pays; the order
   assert.equal(f.mock.state.payments.length, 0, "a latched order is only ever polled");
   const o = loadOrders()[0];
   f.mock.state.orders.get(o.planeOrder).status = "expired";
+  // Audit wave 4 C8: the plane's word alone ends nothing. The chain's does: past the permit's deadline, its Permit2 nonce unused.
+  f.ctx.permit2 = { nonceBitmap: async () => BigNumber.from(0) };
+  f.clock.timestamp = o.permitDeadline - 10;
   await advanceOrders(f.ctx);
-  assert.deepEqual(loadOrders(), [], "the plane says expired: nothing was charged, and it is over");
+  assert.equal(loadOrders()[0].stage, "paying", "expired, says the plane, but the permit could still be taken: still open");
+  f.clock.timestamp = o.permitDeadline + 1;
+  await advanceOrders(f.ctx);
+  assert.deepEqual(loadOrders(), [], "past the deadline, nonce unused on chain: nothing was charged, and it is over");
   await f.close();
 });
 
