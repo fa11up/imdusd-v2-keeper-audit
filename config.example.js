@@ -6,6 +6,9 @@ export default {
   READ_MAX_SPREAD_BLOCKS: 20, // nodes further apart than this: no reads (a stuck node would pin every read to its old block)
   READ_MAX_LAG_SECONDS: 180, // the common latest block older than this: critical rpc-stale
   LOOP_FAIL_ALERT: 5, // a loop failing this many passes in a row: critical loop-failing-<loop>
+  LOOP_DEADLINE_SECONDS: 240, // a loop still running after this (or { <loop>: s }): critical loop-slow-<loop> while it runs (lanes: keeper.mjs)
+  READ_TIMEOUT_SECONDS: 20, // every read RPC request times out here (ethers' default is 120 s with up to 12 retries on 429)
+  SKIP_CRITICAL_SECONDS: 300, // urgent sends skipped by the guard this long with none landing: send-skipped turns critical
   // Where signed transactions go, in order: PRIVATE RPCs only (MEV Blocker, ...). --execute refuses to start without one. Env: SEND_RPC_URLS.
   SEND_RPC_URLS: [],
   DEPLOYMENT: "./deployment.json", // the launch record (beta.json). Env: DEPLOYMENT.
@@ -61,7 +64,7 @@ export default {
   // and only this keeper can claim them there (the 4663 keeper claims on 4663). Idle until the deployment record names a `bridge`;
   // then it needs peer.bridge (4663's ImdBridge) or the loop fails loudly every pass. With it off and a bridge in the record, the
   // keeper raises critical bridge-watch-off at startup. peer.{ledger, params, usd} add 4663's supply equation.
-  BRIDGE_WATCH: { enabled: true, peer: { bridge: null, fromBlock: 0 }, directions: "both", stuckWarnSeconds: 1800, stuckCriticalSeconds: 7200, unverifiedSeconds: 1800, supplyToleranceWei: "1000000000000000000" },
+  BRIDGE_WATCH: { enabled: true, peer: { bridge: null, fromBlock: null }, directions: "both", peerLagSeconds: 600, stuckWarnSeconds: 1800, stuckCriticalSeconds: 7200, unverifiedSeconds: 1800, supplyToleranceWei: "1000000000000000000" },
   PEERS: { 4663: { READ_RPC_URLS: ["https://rpc.mainnet.chain.robinhood.com"] } },
 
   // lib/tx.mjs guard rails
@@ -96,11 +99,11 @@ export default {
       // one Permit2 approval is made by hand (README "4663"): this process never sends a mainnet transaction.
       IMD_FEEDS: { buy: false },
       PULSE: { pokeAfterSeconds: 480 }, // gap 15 min: poke when nobody has for 8 min
-      STOCKS: { tickAfterSeconds: 240 }, // StockJoin TICK_SPAN 5 min: tick each live auction every 4 min
+      STOCKS: { tickAfterSeconds: 150 }, // StockJoin TICK_SPAN 5 min: tick at 2.5 min so a pass that runs late still lands inside it
       RATES: { minMoveBps: 5, maxAgeHours: 24 },
       // peer.bridge: mainnet's ImdBridge; peer.{ledger, params, usd, pegHook, migrator} add mainnet's supply equation. directions "both"
       // checks mints on both chains from this one process.
-      BRIDGE_WATCH: { peer: { bridge: null, fromBlock: 0 }, directions: "both", stuckWarnSeconds: 1800, stuckCriticalSeconds: 7200, unverifiedSeconds: 1800, supplyToleranceWei: "1000000000000000000" },
+      BRIDGE_WATCH: { peer: { bridge: null, fromBlock: null }, directions: "both", peerLagSeconds: 600, stuckWarnSeconds: 1800, stuckCriticalSeconds: 7200, unverifiedSeconds: 1800, supplyToleranceWei: "1000000000000000000" },
       ALLOCATOR: { sales: [], minSaleUsd: 25, fundBuffer: false },
       GUARDIAN: { knownKeepers: [], unbackedConfirmSeconds: 120, quoteDepegConfirmSeconds: 900 },
     },

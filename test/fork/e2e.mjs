@@ -22,7 +22,8 @@ const { writeState, readState } = await import("../../lib/state.mjs");
 
 const cfg = (await import("../../config.example.js")).default;
 // No plane in this file: nothing answers here, so the feeds and seats loops hold (test/fork/duties.mjs drives them against a local mock).
-const CFG = { ...cfg, READ_RPC_URLS: [RPC], SEND_RPC_URLS: [RPC], ALLOW_PUBLIC_SEND: true, API_BASE: "http://127.0.0.1:1", API_FALLBACKS: [], PLANE: { useEns: false, timeoutMs: 500 } };
+// No 4663 peer on this fork: the bridge watcher is off here (it raises bridge-watch-off; the watcher is proven on fake chains only).
+const CFG = { ...cfg, READ_RPC_URLS: [RPC], SEND_RPC_URLS: [RPC], ALLOW_PUBLIC_SEND: true, API_BASE: "http://127.0.0.1:1", API_FALLBACKS: [], PLANE: { useEns: false, timeoutMs: 500 }, BRIDGE_WATCH: { ...cfg.BRIDGE_WATCH, enabled: false } };
 
 const raw = new providers.StaticJsonRpcProvider(RPC, 1);
 raw.pollingInterval = 100;

@@ -29,11 +29,11 @@ test("property P2: no order but a fall pays into the reserve kept for falls (see
     const orders = new Map();
     let latches = [];
     const client = {
-      quote: async (_k, _a, input) => { const id = `o${orders.size}`; orders.set(id, input); return { status: 201, body: { order: { id } } }; },
+      quote: async (_k, action, input) => { const id = `o${orders.size}`; orders.set(id, { ...input, action }); return { status: 201, body: { order: { id } } }; },
       challenge: async (id) => {
         const n = orders.get(id).questions?.length ?? 1;
         const amount = UNIT.mul(n).toString();
-        return { status: 402, body: { resource: {}, resourceUrl: "", requesterScopeHash: "ab".repeat(32), accepts: [{ network: "eip155:1", amount, asset: IMD, payTo: PAY_TO, maxTimeoutSeconds: 300 }], quote: { id, quoteHash: "cd".repeat(32), action: "x", expiresAt: 1, payment: { network: "eip155:1", asset: IMD, amount, payTo: PAY_TO } } } };
+        return { status: 402, body: { resource: {}, resourceUrl: `https://api.imd.fun/requests/${id}/submit`, requesterScopeHash: "ab".repeat(32), accepts: [{ network: "eip155:1", amount, asset: IMD, payTo: PAY_TO, maxTimeoutSeconds: 300 }], quote: { id, quoteHash: "cd".repeat(32), action: orders.get(id).action, expiresAt: 1, payment: { network: "eip155:1", asset: IMD, amount, payTo: PAY_TO } } } };
       },
       submit: async () => ({ status: 200, body: {} }),
       order: async () => ({ status: 200, body: { status: "paid" } }),

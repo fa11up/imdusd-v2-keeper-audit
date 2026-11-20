@@ -38,7 +38,7 @@ function world(seed) {
     challenge: async (id) => ({
       status: 402,
       body: {
-        resource: {}, resourceUrl: "", requesterScopeHash: "ab".repeat(32),
+        resource: {}, resourceUrl: `https://api.imd.fun/requests/${id}/submit`, requesterScopeHash: "ab".repeat(32),
         accepts: [{ scheme: "exact", network: "eip155:1", amount: "500000000000000000", asset: IMD, payTo: PAY_TO, maxTimeoutSeconds: 300 }],
         quote: { id, quoteHash: "cd".repeat(32), action: "oracle.request", expiresAt: chain.now + 600, payment: { network: "eip155:1", asset: IMD, amount: "500000000000000000", payTo: PAY_TO } },
       },

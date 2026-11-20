@@ -90,6 +90,7 @@ try {
     API_BASE: api, API_FALLBACKS: [], PLANE: { ...example.PLANE, useEns: false, holdAfterBlocked: 3 },
     LOGS: { chunk: 9_000, lag: 0, indexTtlSeconds: 0 },
     MIN_ETH: 0.001, ROUTINE_MIN_ETH: 0.001, ROUTINE_MAX_GAS_GWEI: 1000, MAX_GAS_GWEI: 1000,
+    BRIDGE_WATCH: { ...example.BRIDGE_WATCH, enabled: false }, // no 4663 peer on this fork
   };
   CFG.IMD = { ...CFG.IMD, dailyCap: 20 };
   CFG.GUARDIAN = { ...CFG.GUARDIAN, knownKeepers: [] };

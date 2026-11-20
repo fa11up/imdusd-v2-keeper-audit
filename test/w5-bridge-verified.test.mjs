@@ -38,7 +38,8 @@ test("a forged packet waiting at the endpoint is flagged critical before it exec
       const hit = raised.find((a) => a.key === `bridge-verified-forged-${nameOf(f.dst)}-${f.nonce}`);
       assert.ok(hit, `${where}: forged packet nonce ${f.nonce} waiting at ${nameOf(f.dst)}'s endpoint was never flagged`);
       assert.equal(hit.level, "critical");
-      assert.ok(hit.t - f.tv <= BOUND, `${where}: flagged ${Math.round(hit.t - f.tv)} s after verification, past the bound`);
+      const net = hit.t - f.tv - w.stalledBetween(f.tv, hit.t); // net of injected RPC stalls (as w5-bridge-gaps; audit #5/#11 add reads)
+      assert.ok(net <= BOUND, `${where}: flagged ${Math.round(hit.t - f.tv)} s after verification (${Math.round(net)} s net of RPC stalls), past the bound`);
       if (f.te !== null) assert.ok(hit.t < f.te, `${where}: nonce ${f.nonce} flagged at ${Math.round(hit.t - f.tv)} s, AFTER it executed at ${Math.round(f.te - f.tv)} s`);
       assert.match(hit.msg, /NOT (YET )?EXECUTED|waits at the endpoint/i, `${where}: the alert must tell the Safe it can still hold/void`);
     }

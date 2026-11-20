@@ -159,46 +159,53 @@ test("writeOff: never before 1 h after the arming reading, re-armed past the win
     const r = rng(seed);
     const since = r() < 0.3 ? 0 : 1_000_000;
     const now = 1_000_000 + Math.floor((r() - 0.1) * 9 * 86_400);
-    const worth = r() < 0.3 ? E18 : BigNumber.from(0);
-    const st = writeOffStep({ worth, since, now });
-    if (st.act === "writeoff") assert.ok(since !== 0 && now >= since + WRITEOFF_DELAY && now <= since + WRITEOFF_WINDOW && worth.isZero(), `seed ${seed}`);
-    if (!worth.isZero()) assert.ok(["clear", "none"].includes(st.act));
-    if (worth.isZero() && (since === 0 || now > since + WRITEOFF_WINDOW)) assert.equal(st.act, "arm");
+    const worthless = r() >= 0.3;
+    const lastCall = r() < 0.3 ? null : now - Math.floor(r() * 1800);
+    const st = writeOffStep({ worthless, since, now, lastCall });
+    if (st.act === "writeoff") assert.ok(since !== 0 && now >= since + WRITEOFF_DELAY && now <= since + WRITEOFF_WINDOW && worthless, `seed ${seed}`);
+    if (!worthless) assert.ok(["clear", "none"].includes(st.act));
+    if (worthless && (since === 0 || now > since + WRITEOFF_WINDOW)) assert.equal(st.act, "arm");
   }
 });
 
-test("writeOff loop: worthless custody arms once, then writes each position with debt off an hour later", async () => {
+// The wave-5b LedgerSettlement: readings chained at most 15 min apart. Passes every 60 s against its model (rh-world).
+async function writeOffRun(w, ctx, seconds, each = () => {}) {
+  for (let t = 0; t < seconds; t += 60) { each(t); await runStocks(ctx); w.now += 60; }
+}
+
+test("writeOff loop: worthless custody is armed, its readings kept, and each position with debt written off after the hour", async () => {
   fresh();
   const { w, ctx, book } = makeWorld({ types: [{ id: SPY, name: "STOCK-SPY", auction: true, stock: true, worthless: true }], positions: [{ id: 1, ilk: SPY }, { id: 2, ilk: SPY }, { id: 3, ilk: SPY, debt: BigNumber.from(0) }] });
   book.ledger.address = "0x00000000000000000000000000000000000000Ed";
-  await runStocks(ctx);
-  assert.deepEqual(w.acts.map((a) => `${a.fn} ${a.args[0]}`), ["writeOff 1"]);
-  w.acts.length = 0;
-  w.types.get(SPY).worthlessSince = w.now;
-  w.now += 3600;
-  await runStocks(ctx);
-  assert.deepEqual(w.acts.map((a) => `${a.fn} ${a.args[0]}`), ["writeOff 1", "writeOff 2"]);
+  const t0 = w.now;
+  await writeOffRun(w, ctx, 2 * 3600);
+  assert.equal(w.acts[0].label, "writeOff STOCK-SPY arm");
+  assert.deepEqual((w.seized ?? []).sort(), ["1", "2"]);
+  assert.ok(w.acts.filter((a) => /#/.test(a.label)).every((a) => a.at >= t0 + 3600), "no seizing call before the hour");
 });
 
-test("writeOff waits out the Pulse grace: arming still goes, no position is written off in grace, all go once it ends", async () => {
+test("writeOff waits out the Pulse grace: no seizing call while in grace, said in the alert; all written off once it ends", async () => {
   fresh();
   const { w, ctx, book } = makeWorld({ types: [{ id: SPY, name: "STOCK-SPY", auction: true, stock: true, worthless: true }], positions: [{ id: 1, ilk: SPY }, { id: 2, ilk: SPY }] });
   book.ledger.address = "0x00000000000000000000000000000000000000Ed";
-  w.grace = true;
-  await runStocks(ctx);
-  assert.deepEqual(w.acts.map((a) => `${a.fn} ${a.args[0]}`), ["writeOff 1"], "arming seizes nothing and is not held by the grace");
-  w.acts.length = 0;
-  w.types.get(SPY).worthlessSince = w.now;
-  w.now += 3600;
   const alerts = [];
-  ctx.alerts = { raise: async (level, key, msg) => alerts.push({ level, key, msg }), settle: async () => {} };
-  await runStocks(ctx);
-  assert.deepEqual(w.acts.map((a) => `${a.fn} ${a.args[0]}`), [], "no seizing writeOff is sent while the Pulse is in grace (it would revert SequencerGrace)");
-  assert.ok(alerts.some((a) => a.key === "stocks-worthless-STOCK-SPY" && /grace/i.test(a.msg)), "the worthless alert says the write-off waits out the grace");
-  assert.ok(!alerts.some((a) => /fail|refus/i.test(a.key)), "the wait is expected: no failure alert");
-  w.grace = false;
-  await runStocks(ctx);
-  assert.deepEqual(w.acts.map((a) => `${a.fn} ${a.args[0]}`), ["writeOff 1", "writeOff 2"], "once the grace ends every position with debt is written off");
+  ctx.alerts = { raise: async (level, key, msg) => alerts.push({ level, key, msg, at: w.now }), settle: async () => {} };
+  const t0 = w.now;
+  await writeOffRun(w, ctx, 4 * 3600, () => { w.grace = w.now >= t0 + 3000 && w.now < t0 + 5400; });
+  const inGrace = w.acts.filter((a) => /#/.test(a.label) && a.at >= t0 + 3000 && a.at < t0 + 5400);
+  assert.deepEqual(inGrace.map((a) => a.label), [], "a seizing writeOff was sent in the grace");
+  assert.ok(alerts.some((a) => a.key === "stocks-worthless-STOCK-SPY" && /grace/i.test(a.msg)), "the alert says it waits out the grace");
+  assert.deepEqual((w.seized ?? []).sort(), ["1", "2"], "written off once the grace ended");
+  assert.ok(!alerts.some((a) => /fail|refus/i.test(a.key)));
+});
+
+test("writeOff judges worthlessness by StockVault.worthless(), never convertToAssets == 0: a dust-donated hollow vault is still written off", async () => {
+  fresh();
+  const { w, ctx, book } = makeWorld({ types: [{ id: SPY, name: "STOCK-SPY", auction: true, stock: true, worthless: true, dust: 7 }], positions: [{ id: 1, ilk: SPY }] });
+  book.ledger.address = "0x00000000000000000000000000000000000000Ed";
+  await writeOffRun(w, ctx, 2 * 3600);
+  assert.deepEqual(w.seized ?? [], ["1"]);
+  assert.ok(!w.acts.some((a) => /clear/.test(a.label)), "a 'clear' was sent while the custody is worthless");
 });
 
 test("SequencerGrace is in the 4663 Ledger ABI, so a writeOff refused in grace reads as the expected wait", async () => {

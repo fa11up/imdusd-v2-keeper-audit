@@ -3,17 +3,20 @@
 ## Audit scope
 
 This is the off-chain keeper for imdUSD v2, published for a public swarm audit. The contracts it runs against are the
-public audit repository [github.com/imdusd/imdusd-v2-audit](https://github.com/imdusd/imdusd-v2-audit), fifth commit
-(the wave-5 snapshot; its README gives the scope, trust model and known issues). The keeper is the beta's liveness: it
+public audit repository [github.com/imdusd/imdusd-v2-audit](https://github.com/imdusd/imdusd-v2-audit), the wave-5b
+contracts snapshot (the commit after the wave-5 snapshot; its README gives the scope, trust model and known issues). The keeper is the beta's liveness: it
 samples depth and proves the pool price on drift, buys and relays falling prices and the network-health index, ticks seat
 auctions, marks and liquidates, and calls the Allocator's rule-driven actions. Since the fourth audit it also runs on
 Robinhood Chain (4663), which launches with the beta on 12-07: one process per chain (`--chain 4663`), with the Pulse,
 the 4663 IMD feeds, stock auctions, rate pokes and write-offs, and the bridge WATCHER (in both processes), which matches
 `Sent` on one chain against `Received`, `Queued` and `PacketVerified` on the other, alerts the Safe's signers, and claims
-honest queued transfers on its own chain once their delay has run (anyone may claim; the bridge has no guardian). This
+honest queued transfers on its own chain once their delay has run (anyone may claim; the bridge has no guardian). The
 second commit carries the wave-4 keeper fixes (the judge's proofs are kept as `test/w4-judge.test.mjs`) and the changes
 made before audit wave 5 (one clock per comparison, proven-complete log ranges, verified-packet alerts, auto-claim
-following the path's live delay and bulk-cancel cutoff, write-offs outside the Pulse grace). It holds NO on-chain rights: every call it makes is one
+following the path's live delay and bulk-cancel cutoff, write-offs outside the Pulse grace). The third commit (wave 5b)
+carries the fixes after the wave-5 keeper audit (the judge's proofs are kept as `test/w5k-judge-h{1,2,3,4}.test.mjs`), an
+internal review of those fixes, the keeper's side of the wave-5b contracts and the 4663 urgent gas ceiling (see "What
+changed since f30a9d0"). It holds NO on-chain rights: every call it makes is one
 anyone may make (the beta gives it no Allocator keeper role and no guardian key; the Safe is the Allocator's freezer).
 It is REPORT-ONLY by default: without `--execute` it reads the chain and writes alerts and state, and sends nothing.
 What a panel should attack first is the "Not proven" list at the end.
@@ -63,7 +66,7 @@ There is no bridge guardian (the Safe pauses, holds, voids and cancels); the bri
 level over `lib/chains.mjs` CHAIN_DEFAULTS; why one process per chain is in that file's header). With no `--chain` the process is the
 mainnet keeper exactly as before. The 4663 process has its own state dir (`state-4663/`), its own key (`KEEPER_MNEMONIC_4663`; the per-key
 lock and a check refuse the mainnet key), env names with a `_4663` suffix (`READ_RPC_URLS_4663`, `LOG_RPC_URLS_4663`, `SEND_RPC_URLS_4663`,
-`DEPLOYMENT_4663`), Telegram messages headed `imdUSD v2 keeper [4663]`, and its own gas ceilings (urgent 1 gwei, routine 0.1 gwei; the tier
+`DEPLOYMENT_4663`), Telegram messages headed `imdUSD v2 keeper [4663]`, and its own gas ceilings (urgent 10 gwei, routine 0.1 gwei; the tier
 logic in `lib/tx.mjs` is unchanged). URLs may carry `${NAME}` placeholders filled from the environment (`BLOCKSCOUT_KEY`). It reads mainnet
 through `PEERS[1]` (the IMD legs' pool, the plane payment, the bridge's other end) and never sends there.
 
@@ -72,10 +75,10 @@ through `PEERS[1]` (the IMD legs' pool, the plane payment, the bridge's other en
 | `pulse` | 60 s | `Pulse.poke()` when nobody has for 8 min (gap 15); critical while in grace |
 | `imdfeeds` | 120 s | The IMD type's swarm legs for consumer 4663: price + spot as one `oracle.group` on a fall only (Ethereum pool vs the 4663 Pricer), NHI daily while IMD debt exists. OFF until `IMD_FEEDS.buy` is true |
 | `positions` | 60 s | Shared with mainnet. In a Pulse grace: marks only, never `bite`/`liquidate` (they would seize nothing). Stock positions under a running auction are left to it; `Liquidator.tick` at every open/close |
-| `stocks` | 60 s | `StockJoin.tick(id)` while an auction runs, once its last read is 4 min old (`STOCKS.tickAfterSeconds` 240; the loop runs every 60 s, so a tick lands 4-5 min after the last read, inside StockJoin's 5 min `TICK_SPAN`), `cancel` when healed, `MarketHoursFeed.sync()` after a multiplier step, `Ledger.writeOff` (arm, 1 h, write off; clear when worth again) |
+| `stocks` | 60 s | `StockJoin.tick(id)` while an auction runs, once its last read is 150 s old (`STOCKS.tickAfterSeconds` 150, was 240: wave-5 audit #18; the loop is scheduled from its pass's start, so with up to 90 s of other work in a round a tick still lands inside StockJoin's 5 min `TICK_SPAN`; a read found older than that at its tick raises warn `stocks-tick-late-*`), `cancel` when healed, `MarketHoursFeed.sync()` after a multiplier step, `Ledger.writeOff` (`StockVault.worthless()`: arm, a reading every 10 min, write off after 1 h; clear when no longer worthless) |
 | `rates` | 15 min | `RateFeed.poke()` on a rise past 5 bps or 24 h |
 | `peg`, `backstop`, `allocator`, `guardian`, `watch` | as mainnet | shared code; `watch` skips depth (none on 4663) |
-| `bridge` | 120 s | Watcher, and AUTO-CLAIM of honest queued transfers on this chain (the ImdBridge inbound delay). Indexes `Queued`, `Claimed`, `ClaimCancelled`, `ClaimRestored`, `DelaySet` with the bridge's other logs; the queue is proven by the `received`/`queued` counters, the path's delay settings by `breakers()` at the block read through. A `Queued` that matches no `Sent` is critical `bridge-queued-forged-*` (naming `pause`, `cancelClaim` and the bulk `tighten` cutoff), raised long before it is claimable; it is never claimed. A matching one is claimed (`claim(srcEid, guid)`, routine tier, urgent past 1 h late) in the first pass after queuedAt + the path's delay read that pass (`breakers(srcEid).delay`: a lengthened or shortened delay applies to pending claims), unless the path is paused, the queue breaker tripped (critical `bridge-breaker-tripped-*`) or the bulk-cancel cutoff covers it (info `bridge-bulk-cancel-*`, no send until a SET_DELAY lifts it). No double send: the send journal is settled and read first, and `claims()` is read before each send. Report-only mode simulates and sends nothing. Also: a `Received` with no matching `Sent` (forgery) once the source chain is indexed through its head read after the Received (normally the next pass; no timestamps of the two chains are compared), else `unverified` after 30 min; a log range is marked read only when two reads agree and the bridge's own sent/received counters match it (`bridge-index-gap-*` otherwise), a packet VERIFIED at the destination endpoint (`PacketVerified`) with no matching `Sent` (critical `bridge-verified-forged-*`, saying whether it still waits at the endpoint: the Safe can then hold or void it before it runs; no window when it runs in the block it is verified), stuck transfers, held/voided payloads, paused paths, cumulative counters, the supply equation on each chain |
+| `bridge` | 120 s | Watcher, and AUTO-CLAIM of honest queued transfers on this chain (the ImdBridge inbound delay). Indexes `Queued`, `Claimed`, `ClaimCancelled`, `ClaimRestored`, `DelaySet` with the bridge's other logs; the queue is proven by the `received`/`queued` counters, the path's delay settings by `breakers()` at the block read through. A `Queued` that matches no `Sent` is critical `bridge-queued-forged-*` (naming `pause`, `cancelClaim` and the bulk `tighten` cutoff), raised long before it is claimable; it is never claimed. A matching one is claimed (`claim(srcEid, guid)`, URGENT tier from maturity: wave-5 audit #17; `claimUrgentSeconds` > 0 restores a routine first period; a claim the send guard skips raises warn `bridge-claim-late-*` with the reason in that pass) in the first pass after queuedAt + the path's delay read that pass (`breakers(srcEid).delay`: a lengthened or shortened delay applies to pending claims), unless the path is paused, the queue breaker tripped (critical `bridge-breaker-tripped-*`) or the bulk-cancel cutoff covers it (info `bridge-bulk-cancel-*`, no send until a SET_DELAY lifts it). No double send: the send journal is settled and read first, and `claims()` is read before each send. Report-only mode simulates and sends nothing. Also: a `Received` with no matching `Sent` (forgery) once the source chain is indexed through its highest head read `BRIDGE_WATCH.peerLagSeconds` (600 s) after the Received was first indexed (wave-5 audit #1: a source RPC lagging up to that long plus the delivery time never makes an honest transfer forged; the price is up to 10 min more before a forgery-by-absence is named; no timestamps of the two chains are compared), else `unverified` after 30 min; a log range is marked read only when two reads agree and the bridge's own sent/received counters match it (`bridge-index-gap-*` otherwise), a packet VERIFIED at the destination endpoint (`PacketVerified`) with no matching `Sent` (critical `bridge-verified-forged-*`, saying whether it still waits at the endpoint: the Safe can then hold or void it before it runs; no window when it runs in the block it is verified), stuck transfers, held/voided payloads, paused paths, cumulative counters, the supply equation on each chain |
 
 The 4663 keeper pays for answers from ITS key's IMD on Ethereum; make its one Permit2 approval by hand (`IMD.approve(Permit2, 30 IMD)`
 from that address on mainnet): the 4663 process alerts `feeds-permit2-unapproved` instead of sending it. The operator provides the 4663 key,
@@ -118,6 +121,75 @@ Every signed transaction is written to `state/tx/<nonce>.json` before it is broa
 send settles the journal first: mined clears it, an open one goes out again as the same signed bytes and new sends wait. Each step is appended to
 `state/journal.jsonl`.
 
+## What changed since f30a9d0
+
+The wave-5 keeper audit ran on f30a9d0 (judge and four specialists, job 76be5a3d: 4 high, 10 medium, 10 low, 1 info). In
+this README and in the code comments, `wave-5 audit #N` is the Nth finding of that job's JUDGE submission, in its order
+(#1-#4 high, #5-#14 medium, #15-#24 low, #25 info). Every finding was reproduced first: each finding's property test fails on
+the code of f30a9d0 for the reason the judge gives and passes here; the judge's own proofs for #1-#4 are kept as
+`test/w5k-judge-h{1,2,3,4}.test.mjs`. An internal review of the fixes followed (its cases are `test/w5k-audit-suite.test.mjs`
+and `test/w5k-round3.test.mjs`), and the keeper was adapted to the wave-5b contracts snapshot. `npm test`: 211 tests (151 at
+f30a9d0). The 4663 urgent gas ceiling is now 10 gwei (was 1: urgent pokes, ticks and claims were blocked above ~0.89 gwei).
+
+* **Lanes, not one queue** (#3). `keeper.mjs runLanes`: the loops run in independent lanes, `pulse` (4663: the Pulse poke alone), `peer`
+  (the loops that read the other chain: `bridge`, `imdfeeds`) and `home` (the rest). A slow or hanging peer RPC never holds the Pulse,
+  stock ticks or bites. Sends stay one at a time across lanes (a send lock in `lib/act.mjs`). Each loop pass has a deadline
+  (`LOOP_DEADLINE_SECONDS`, 240 s): past it, critical `loop-slow-<loop>` is raised WHILE the loop still runs. Every read RPC request
+  has a 20 s timeout (`READ_TIMEOUT_SECONDS`) and no long 429 retry chain. A loop's next run is scheduled from its pass's start.
+* **Bridge watcher** (#1, #2, #4, #5, #8, #10, #11, #14, #15, #22). Every alert is raised the moment it is judged (a later read that
+  throws drops nothing). The PEER chain's reads are isolated: while its RPC does not answer, the home side is still indexed and judged
+  on the saved peer index (a new transfer goes unverified at 30 min), honest matched claims are still sent, and critical
+  `bridge-peer-unread-<peer>` names the outage. Standing alerts are settled only after a pass that read everything it judges; a failed
+  `claims()`/`paused()` read keeps its alerts; a gap stands through a pass that read nothing. Logs are proven and kept per range, at most
+  40 ranges / 60 s per pass (the next pass resumes); an unset `BRIDGE_WATCH.peer.fromBlock` is found from the peer bridge's code (needs
+  an archive node; else critical `bridge-peer-fromblock-*`). Reorgs: the block hash of each proven range is kept (64 checkpoints); a
+  replaced block rewinds the side to the newest matching checkpoint and reads again (warn `bridge-reorg-*`; critical when deeper than
+  every checkpoint: the side is read again from its start). Verified packets are proven against EndpointV2's `inboundNonce` and
+  `inboundPayloadHash`, not two reads of one node. Source bounds wait `peerLagSeconds` (600 s) of the keeper's own clock and take the
+  highest head of the peer's RPCs; the counter check compares the peer's `sent()` with the destination's counters read at least that
+  long before. The supply equation is read at one block. A mined claim in the journal is never sent again.
+* **Bridge watcher, after the internal review.** A state file from before these fixes is migrated (its start from config, old
+  bounds dropped and stamped again under the lag rule); a reorg past every checkpoint rewinds to the base snapshot, and one deeper than
+  that KEEPS the index and raises critical `bridge-reindex-*` (re-index by moving `bridge-watch.json` aside). Home logs or counters that
+  cannot be read are a gap (critical after 30 min). A head that does not move for `BRIDGE_WATCH.headStallSeconds` (600 s) is critical
+  `bridge-head-stalled-*`. A head is capped at the first RPC's + `READ_MAX_SPREAD_BLOCKS`, and a bound above the current head is stamped
+  again. A peer side whose start could not be found is not saved. The journal's "mined" holds a claim back for
+  `BRIDGE_WATCH.minedTrustSeconds` (30 min) only. Alerts: an undelivered key is retried from `settle`; a never-delivered key clears
+  without a Telegram "cleared"; a failed "cleared" is retried.
+* **Keeper vs the wave-5b contracts snapshot** (internal review). Write-off: worthlessness is
+  `StockVault.worthless()` (never `convertToAssets == 0`); while worthless and armed the keeper calls `writeOff` every
+  `STOCKS.writeOffRecordSeconds` (600 s, measured from the chain's `Ledger.worthlessLast` when the Ledger has the getter, else from
+  the keeper's own last call) so the wave-5b LedgerSettlement's chained readings (15 min `WRITEOFF_STEP`) reach the hour, then
+  writes each position off; `clear` only when the custody is no longer worthless. The loop-slow watchdog repeats every deadline while
+  a pass hangs. A new run of skipped sends after a quiet gap starts at warn. The bridge's journal settlement holds the send lock.
+  `backstop-unpriced-legs-*` (warn) when `PricerOracle.priceOf` refuses a type whose legs disagree (prove the latest block or buy a
+  median). UNCAPPED RateFeeds are not poked. A late stock tick stands an hour. `--only` naming no loop and a non-numeric
+  `LOOP_DEADLINE_SECONDS` refuse to start. Stocks run in their own lane on 4663.
+* **Price fixes after wave 5** (wave-5b contracts snapshot): price leaves no longer widen after a silence, so a median held above its last falling
+  answer is walked on by ONE honest median per epoch while the type has debt (sIMD `feeds`, 4663 IMD `imdfeeds`; kind `walk`, a fall:
+  the Treasury still never pays for rises). Warn `feeds-median-held` when the epoch's range high sits above its anchor while the median
+  is held above a falling answer (an up value relayed first; if it persists, the operator response is the Safe's `lowerLine(SIMD, 0)`). When
+  `PricerOracle.priceOf(sIMD)` is refused while the quote is priced: the pool within skew of the median = a pushed-up proof, proved
+  at once (warn `feeds-simd-refused`); past skew = a rally, warn `feeds-simd-rally` only. `Backstop.retire` reverting `StillPriced`
+  then is expected.
+* **Config keys added in wave 5** (all optional): `LOOP_DEADLINE_SECONDS` (240, or `{ <loop>: s }`), `READ_TIMEOUT_SECONDS` (20),
+  `SKIP_CRITICAL_SECONDS` (300), `LANE_MIN_SLEEP_MS` (1000: a lane's shortest sleep), `STOCKS.tickAfterSeconds` (150),
+  `STOCKS.tickSpanSeconds` (300, StockJoin's TICK_SPAN), `STOCKS.writeOffRecordSeconds` (600), `BRIDGE_WATCH.peerLagSeconds` (600),
+  `BRIDGE_WATCH.headStallSeconds` (600), `BRIDGE_WATCH.minedTrustSeconds` (1800), `BRIDGE_WATCH.claimUrgentSeconds` (0: urgent from
+  maturity), `BRIDGE_WATCH.claimLateSeconds` (3600), `BRIDGE_WATCH.verifyNonces` (true), and the environment variable
+  `KEEPER_LOCK_DIR` (where the per-key lock and the key's chain binding live; default `~/.imdusd-v2-keeper/locks`).
+* **Sending** (#9, #13, #16, #17). Nothing is signed unless it is an EIP-1559 transaction under the tier's ceiling (no base fee: the send
+  is skipped, never signed at `eth_gasPrice`). A due URGENT send the guard skips (gas, ETH floor, open send, STOP, a refused fee) raises
+  warn `send-skipped` with the reason, critical after `SKIP_CRITICAL_SECONDS` (300 s), cleared by the next send that lands. The 4663 key
+  is compared with the mainnet key by ADDRESS, and a key is bound to its chain on this machine (`<address>.chain` in the key-lock dir).
+* **Orders** (#12, #23, #24). An admission that does not fit the questions paid for is a paid refusal (critical, all buying held); a
+  plane answer that cannot be read never keeps a paid order out of the admission timeout. Permits are never signed for more than 900 s,
+  whatever `PLANE.maxPermitSeconds` says. A 402 challenge must name this order's action and `/requests/<order>/submit` resource.
+* **Duties** (#18, #19, #20). A close that simulates seizing 0 is never sent (marked instead). `bridge-watch-off` is decided from what
+  will run (loops after `<NAME>_ENABLED` and `--only`, `autoClaim`), on both chains.
+* **Alerts** (#7, #21). A key whose level rises (warn -> critical) fires at once; a Telegram delivery that fails (or is not accepted) is
+  retried on the next raise of the key.
+
 ## Alerts
 
 Log and `state/alerts.jsonl` always; Telegram when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set. Each key repeats while it holds
@@ -157,6 +229,30 @@ Every v2 contract is the deployed bytecode, except where listed under "Only agai
 * **A long run.** Nothing here has run as a daemon for days, or on mainnet.
 * **Audit wave 4 fixes on a fork**: unit and property tests only (`npm test`); the fork suites were not rerun on them. Not proven against a real chain: the Permit2 `nonceBitmap` read at one block (C8), the cancel replacing a real stuck transaction through a real private relay (P3), `foreignPending` on a real mempool.
 * **sIMD liquidation after a real fall** waits on the median's epoch walk (20% an epoch, a paid answer each): a 40% fall takes ~3 epochs whatever the keeper does (wave 4 info, C5). The keeper can only start the walk.
+* **Audit wave 5 fixes on a fork**: unit and property tests only, against fake chains. The fork suites (`e2e.mjs`, `duties.mjs`)
+  pass on these fixes against the wave-5 fixed contracts but run with the bridge watcher OFF (no 4663 peer on a mainnet fork): no fork
+  test covers the bridge watcher, auto-claim, the lanes or any 4663 duty (the stock write-off runs on a model of the wave-5b
+  `LedgerSettlement.writeOff`). Not proven against a real chain: reorg rewind on a real 4663/mainnet reorg, `EndpointV2.inboundNonce` historical reads on the 4663 public RPC (no
+  archive: the verified-nonce proof then falls back to the logs with warn `bridge-index-unchecked-*`), the deploy-block search on a
+  non-archive peer, lanes under real RPC latency.
+* **A source RPC lagging more than `peerLagSeconds` + the delivery time** can still make an honest transfer look forged (#1 residual):
+  give the peer two RPCs (the highest head wins) or raise `peerLagSeconds` (it delays a forgery-by-absence verdict by as much).
+* **Holds and voids on a lone log RPC**: `HoldPlaced`/`Voided` move no counter and the endpoint has no count of them; with one log RPC
+  they are still "proven" by two reads of the same node (#11 residual; a hold/void counter on ImdBridge would close it).
+* **The verified-nonce proof needs an archive-capable node.** `EndpointV2.inboundNonce` is read at past blocks; without archive state
+  it falls back to the logs (warn `bridge-index-unchecked-*`).
+* **`BRIDGE_WATCH.peer.fromBlock` must be set** in each production config to the peer bridge's deploy block. Unset, the watcher searches
+  for it from the bridge's code, which needs an archive node; if the search fails it raises critical `bridge-peer-fromblock-*` and saves
+  no peer side.
+* **A re-index is a human step.** A reorg deeper than every kept checkpoint and the base snapshot keeps the index and raises critical
+  `bridge-reindex-*`; re-indexing means moving `bridge-watch.json` aside. With ONE home RPC, `bridge-head-stalled-*` cannot tell a frozen
+  RPC from a halted chain (both are raised as critical).
+* **Rise medians are never bought.** During a long rally `PricerOracle` refuses sIMD (one-leg value) and sleeve conversions and sIMD
+  sales wait for a median within skew; the keeper only alerts (`feeds-simd-rally`). The once-per-epoch walk of a held median is proven
+  as a pure-function property and by the feeds suites, not by driving a whole silence on a fake leaf with the epoch range.
+* **A write-off across a long Pulse grace.** The seizing `writeOff` reverts in the grace with its reading, so a grace longer than the
+  contracts' 15 min `WRITEOFF_STEP` re-arms the hour; the keeper keeps recording and seizes an hour after the grace (said in the alert).
+* **A liquidation pending past 60 s** can be sent a second time (it reverts on `minSeized`; gas only). Not changed.
 * **Two machines on one key.** Neither lock sees another machine; `foreignPending` sees only public pending sends.
 * **Robinhood Chain (4663).** The 4663 process has run only in unit tests (fake chains and contract stand-ins); it has not
   run against a real 4663 deployment or fork. Not proven: a real plane attestation for a 4663 swarm leaf, 4663 L1 data

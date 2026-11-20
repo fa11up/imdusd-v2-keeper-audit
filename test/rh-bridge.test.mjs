@@ -53,7 +53,8 @@ function setup() {
   const home = fakeChain(HOME_BRIDGE), peer = fakeChain(PEER_BRIDGE);
   const raised = [];
   const ctx = {
-    cfg: { CHAIN_ID: 4663, LOGS: { lag: 0, chunk: 100_000 }, BRIDGE_WATCH: { peer: { bridge: PEER_BRIDGE, fromBlock: 0 }, peerLogs: { lag: 0, chunk: 100_000 }, directions: "both" } },
+    // peerLagSeconds 0: this file proves the one-clock rule alone, on fresh nodes (the lag tolerance is test/w5k-judge-h1 + w5k-bridge-lag).
+    cfg: { CHAIN_ID: 4663, LOGS: { lag: 0, chunk: 100_000 }, BRIDGE_WATCH: { peer: { bridge: PEER_BRIDGE, fromBlock: 0 }, peerLogs: { lag: 0, chunk: 100_000 }, directions: "both", peerLagSeconds: 0 } },
     provider: home.provider, peers: { 1: peer.provider }, peerBridge: peer.bridge, log: () => {},
     book: { bridge: home.bridge, record: { deployBlock: 0 }, ledger: {}, params: {}, usd: {}, pegHook: null },
     readSupply: async (p, a, br) => ({ totalSupply: (await br.received()).sub(await br.sent()), debts: [], badDebts: [], reserveBacked: 0, migrator: 0, pegKeeper: 0, received: await br.received(), sent: await br.sent() }),

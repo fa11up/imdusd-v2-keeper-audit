@@ -24,6 +24,32 @@ export function rng(seed) {
  * w.positions: id -> { ilk, collateral, debt, healthy, priced }; w.types: ilk -> { name, priced, auction, stock }; w.now; w.grace;
  * w.auctions: id -> { startAt, lastTick, ran, marker }; w.marks: id -> markedAt.
  */
+/** LedgerSettlement.writeOff (wave-5b contracts snapshot): chained worthless readings, WRITEOFF_STEP 15 min, DELAY 1 h, WINDOW 7 d,
+ *  SequencerGrace on the seizing step (the revert drops the reading). Mutates the world; returns { did } or { revert }. */
+export function writeOffModel(w, id) {
+  const p = w.positions.get(id);
+  const t = w.types.get(p.ilk);
+  const since = t.worthlessSince ?? 0;
+  if (!t.worthless) {
+    if (since === 0) return { revert: "NotWorthless" };
+    t.worthlessSince = 0;
+    return { did: "cleared" };
+  }
+  const last = t.worthlessLast ?? 0;
+  if (since === 0 || w.now > since + 7 * 86_400 || w.now > last + 900) {
+    t.worthlessLast = w.now;
+    t.worthlessSince = w.now;
+    return { did: "armed" };
+  }
+  if (w.now < since + 3600) { t.worthlessLast = w.now; return { did: "recorded" }; }
+  if (w.grace) return { revert: "SequencerGrace" };
+  t.worthlessLast = w.now;
+  if (p.debt.isZero()) return { revert: "NoDebt" };
+  p.debt = BigNumber.from(0);
+  (w.seized ??= []).push(id);
+  return { did: "seized" };
+}
+
 export function makeWorld({ now = 1_800_000_000, types = [], positions = [] } = {}) {
   const w = { now, grace: false, lastPulse: now, types: new Map(), positions: new Map(), auctions: new Map(), marks: new Map(), acts: [], logs: [], clocks: new Map() };
   for (const t of types) w.types.set(t.id, { priced: true, ...t });
@@ -46,6 +72,7 @@ export function makeWorld({ now = 1_800_000_000, types = [], positions = [] } = 
       },
       debtOf: async (id) => w.positions.get(String(id)).debt,
       worthlessSince: async (ilk) => w.types.get(ilk).worthlessSince ?? 0,
+      worthlessLast: async (ilk) => w.types.get(ilk).worthlessLast ?? 0, // public in the wave-5b contracts snapshot
     },
     liquidator: {
       address: addr(0x11),
@@ -68,7 +95,8 @@ export function makeWorld({ now = 1_800_000_000, types = [], positions = [] } = 
           auctions: async (id) => w.auctions.get(String(id)) ?? { startAt: 0, lastTick: 0, ran: 0 },
           auctionTime: async () => BigNumber.from(auctionTime),
         },
-        vault: { convertToAssets: async () => (t.worthless ? BigNumber.from(0) : E18) },
+        // StockVault.worthless() (wave-5b contracts snapshot): under 1e-6 of the stock its shares claim; `dust` = a donation that leaves it worthless
+        vault: { convertToAssets: async () => (t.worthless ? BigNumber.from(t.dust ?? 0) : E18), worthless: async () => Boolean(t.worthless) },
         token: { uiMultiplier: async () => BigNumber.from(t.mult ?? E18), newUIMultiplier: async () => BigNumber.from(t.nextMult ?? t.mult ?? E18) },
         market: { address: addr(0x70 + book.stocks.length), seenMultiplier: async () => BigNumber.from(t.seen ?? E18), frozen: async () => Boolean(t.frozen) },
       };
@@ -88,6 +116,10 @@ export function makeWorld({ now = 1_800_000_000, types = [], positions = [] } = 
     execute: false, provider, book, keeperAddress: addr(0xbeef), log: (s) => w.logs.push(s), alerts: makeAlerts(() => {}),
     actHook: async (label, contract, fn, args) => {
       w.acts.push({ label, to: contract.address, fn, args: args.map(String), at: w.now });
+      if (fn === "writeOff") {
+        const r = writeOffModel(w, String(args[0]));
+        if (r.revert) return { refused: r.revert };
+      }
       return { hash: utils.hexZeroPad(utils.hexlify(w.acts.length), 32), block: 1, gas: "1" };
     },
   };

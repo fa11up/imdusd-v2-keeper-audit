@@ -36,12 +36,15 @@ test("property Q4: a fall is bought iff the pool is the trigger below what the P
 });
 
 // Fixed before audit wave 5: the oracle above must be the Pricer's CURRENT twin rule (the contracts' src/Pricer.sol), not
-// the old max(median, spot): legs apart with a fresh proven spot -> low = m > s ? max(s, min(m, attestedMedian)) : s.
+// the old max(median, spot): legs apart with a fresh proven spot -> low = m > s ? max(s, min(m, max(attestedMedian, m x 0.8))) : s
+// (TWIN_STEP since the wave-5 fixes).
 test("the Pricer model is the current twin rule: a median clamped above its attested value counts only at what was attested", () => {
   const legsApart = { skewBps: 500, mConverged: false };
   // A real fall: the proven spot shows it, the median attested it, but the leaf is clamped above (holds a level nobody attested).
-  assert.equal(pricerLow({ m: 1000n, s: 700n, attested: 750n, ...legsApart }).low, 750n, "max(s, min(m, attested)) = 750, not the clamped 1000");
-  assert.equal(pricerLow({ m: 1000n, s: 700n, attested: 600n, ...legsApart }).low, 700n, "a pushed spot cannot go under what the median attested; the spot is the floor");
+  // Merged core (audit wave 5, high): the attested value counts at most TWIN_STEP (20%) below the stored median: 1000 -> floor 800.
+  assert.equal(pricerLow({ m: 1000n, s: 700n, attested: 850n, ...legsApart }).low, 850n, "max(s, min(m, max(attested, 0.8 m))) = 850, not the clamped 1000");
+  assert.equal(pricerLow({ m: 1000n, s: 700n, attested: 750n, ...legsApart }).low, 800n, "an attested value more than TWIN_STEP under the median counts at 0.8 m (wave-5b contracts snapshot)");
+  assert.equal(pricerLow({ m: 1000n, s: 850n, attested: 600n, ...legsApart }).low, 850n, "a pushed spot cannot go under what the median attested; the spot is the floor");
   assert.equal(pricerLow({ m: 1000n, s: 700n, attested: 1200n, ...legsApart }).low, 1000n, "attested above the median: the median");
   assert.equal(pricerLow({ m: 700n, s: 1000n, attested: 700n, ...legsApart }).low, 1000n, "median under the spot: the spot");
   assert.equal(pricerLow({ m: 1000n, s: 700n, ...legsApart }).low, 1000n, "no attested given: the median is its own target (unclamped)");

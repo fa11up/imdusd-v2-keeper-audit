@@ -40,6 +40,10 @@ export function makeBridgeWorld({ seed = 1, skew = { 1: 0, 4663: 0 }, emptyP = 0
     /** The path's settings at real time t (the last change at or before t), and as stored at block n. */
     c.settingsAt = (t) => [...c.settings].reverse().find(([at]) => at <= t)[1];
     c.settingsAtBlock = (n) => [...c.settings].reverse().find(([, , b]) => b <= n)[1];
+    // Block hashes: a reorg (c.reorgFrom(n)) gives every block from n on a new hash.
+    c.forks = [];
+    c.hashOf = (n) => utils.keccak256(utils.toUtf8Bytes(`${id}:${n}:${c.forks.filter((f) => n >= f).length}`));
+    c.reorgFrom = (n) => c.forks.push(n);
     c.headAt = (t) => Math.floor((t - c.genesis) / c.bt);
     c.timeOf = (n) => Math.floor(c.genesis + n * c.bt + c.skew);
     c.realOf = (n) => c.genesis + n * c.bt;
@@ -57,7 +61,8 @@ export function makeBridgeWorld({ seed = 1, skew = { 1: 0, 4663: 0 }, emptyP = 0
       getBlock: async (n) => {
         tick();
         const b = n === "latest" ? c.headAt(w.t) : Number(n);
-        return { number: b, timestamp: c.timeOf(b) };
+        if (b > c.headAt(w.t)) return null; // not produced yet (a node never serves a block past its head)
+        return { number: b, timestamp: c.timeOf(b), hash: c.hashOf(b) };
       },
       getTransactionReceipt: async (h) => (tick(), c.receipts.get(String(h).toLowerCase()) ?? null),
       getLogs: async ({ address, topics, fromBlock, toBlock }) => {
@@ -124,10 +129,25 @@ export function makeBridgeWorld({ seed = 1, skew = { 1: 0, 4663: 0 }, emptyP = 0
     };
     c.endpointContract = {
       address: c.endpoint,
-      inboundPayloadHash: async (receiver, srcEid, sender, nonce) => {
+      inboundPayloadHash: async (receiver, srcEid, sender, nonce, o) => {
         tick();
+        const at = o?.blockTag !== undefined && o.blockTag !== "latest" ? c.realOf(Number(o.blockTag)) : w.t;
         const e = c.stored.get(`${Number(srcEid)}:${Number(nonce)}`);
-        return e && w.t >= e.from && w.t < e.until ? e.hash : utils.hexZeroPad("0x", 32);
+        return e && at >= e.from && at < e.until ? e.hash : utils.hexZeroPad("0x", 32);
+      },
+      // EndpointV2.inboundNonce: the highest n with every nonce 1..n verified (PacketVerified at or before the block) from `sender`.
+      inboundNonce: async (receiver, srcEid, sender, o) => {
+        tick();
+        const top = o?.blockTag !== undefined && o.blockTag !== "latest" ? Number(o.blockTag) : c.headAt(w.t);
+        const got = new Set();
+        for (const l of c.logs) {
+          if (l.address !== c.endpoint || l.block > top || l.name !== "PacketVerified") continue;
+          const a = ENDPOINT_IFACE.parseLog(l.encoded).args;
+          if (Number(a.origin.srcEid) === Number(srcEid) && String(a.origin.sender).toLowerCase() === String(sender).toLowerCase()) got.add(Number(a.origin.nonce));
+        }
+        let n = 0;
+        while (got.has(n + 1)) n++;
+        return BigNumber.from(n);
       },
     };
     w.chains[id] = c;
@@ -255,12 +275,15 @@ export function randomTraffic(w, { horizon = 2 * 3600, tail = 2400, forgeries = 
 }
 
 /** A runBridge context on the world's home chain. */
-export function bridgeCtx(w, raised, extra = {}) {
+// peerLagSeconds 0 by default HERE: the suites written before audit wave 5 prove the one-clock rule, gaps, verified packets and claims on fresh nodes. The
+// lag tolerance (production default 600 s, wave-5 audit #1) and its cost in detection time are proven by w5k-bridge-lag + w5k-judge-h1.
+export function bridgeCtx(w, raised, extra = {}, watch = {}) {
   return {
-    cfg: { CHAIN_ID: w.home.id, LOGS: { lag: 3, chunk: 9_000 }, BRIDGE_WATCH: { peer: { bridge: w.peer.bridge, fromBlock: w.peer.headAt(T0) }, fromBlock: w.home.headAt(T0), peerLogs: { lag: 3, chunk: 9_000 }, directions: "both" } },
+    cfg: { CHAIN_ID: w.home.id, LOGS: { lag: 3, chunk: 9_000 }, BRIDGE_WATCH: { peer: { bridge: w.peer.bridge, fromBlock: w.peer.headAt(T0) }, fromBlock: w.home.headAt(T0), peerLogs: { lag: 3, chunk: 9_000 }, directions: "both", peerLagSeconds: 0, ...watch } },
     provider: w.home.provider, peers: { [w.peer.id]: w.peer.provider }, peerBridge: w.peer.bridgeContract,
     endpointAt: (id) => w.chains[id].endpointContract,
     log: () => {},
+    clock: () => w.t,
     book: { bridge: w.home.bridgeContract, record: { deployBlock: w.home.headAt(T0) }, ledger: {}, params: {}, usd: {}, pegHook: null },
     readSupply: async (p, a, br) => ({ totalSupply: (await br.received()).sub(await br.sent()), debts: [], badDebts: [], reserveBacked: 0, migrator: 0, pegKeeper: 0, received: await br.received(), sent: await br.sent() }),
     alerts: { raise: async (level, key, msg) => raised.push({ level, key, msg, t: w.t }), settle: async () => {} },
@@ -269,9 +292,9 @@ export function bridgeCtx(w, raised, extra = {}) {
 }
 
 /** Run the watcher every `every` seconds of real time to the horizon; returns every alert with the real time it was raised. */
-export async function runPasses(w, runBridge, { horizon = 2 * 3600, every = 120 } = {}) {
+export async function runPasses(w, runBridge, { horizon = 2 * 3600, every = 120, watch = {} } = {}) {
   const raised = [];
-  const ctx = bridgeCtx(w, raised);
+  const ctx = bridgeCtx(w, raised, {}, watch);
   for (let p = T0 + 60; p <= T0 + horizon; p += every) {
     if (w.t < p) w.t = p;
     await runBridge(ctx);
@@ -280,3 +303,4 @@ export async function runPasses(w, runBridge, { horizon = 2 * 3600, every = 120 
 }
 
 export const nameOf = (id) => (id === 1 ? "mainnet" : "4663");
+export { push as pushLog };
