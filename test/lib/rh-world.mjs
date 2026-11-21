@@ -98,7 +98,10 @@ export function makeWorld({ now = 1_800_000_000, types = [], positions = [] } = 
         // StockVault.worthless() (wave-5b contracts snapshot): under 1e-6 of the stock its shares claim; `dust` = a donation that leaves it worthless
         vault: { convertToAssets: async () => (t.worthless ? BigNumber.from(t.dust ?? 0) : E18), worthless: async () => Boolean(t.worthless) },
         token: { uiMultiplier: async () => BigNumber.from(t.mult ?? E18), newUIMultiplier: async () => BigNumber.from(t.nextMult ?? t.mult ?? E18) },
-        market: { address: addr(0x70 + book.stocks.length), seenMultiplier: async () => BigNumber.from(t.seen ?? E18), frozen: async () => Boolean(t.frozen) },
+        market: { address: addr(0x70 + book.stocks.length), seenMultiplier: async () => BigNumber.from(t.seen ?? E18), frozen: async () => Boolean(t.frozen),
+          latestValue: async () => [E18, BigNumber.from(t.lastPrint ? t.lastPrint(w.now) : w.now)] },
+        // MarketCalendar: always open unless the type sets `isOpen(t)`
+        calendar: { isOpenNow: async () => (t.isOpen ? t.isOpen(w.now) : true), isOpen: async (x) => (t.isOpen ? t.isOpen(Number(x)) : true) },
       };
       book.stocks.push(entry);
     }

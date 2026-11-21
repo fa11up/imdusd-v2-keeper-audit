@@ -16,7 +16,10 @@ made before audit wave 5 (one clock per comparison, proven-complete log ranges, 
 following the path's live delay and bulk-cancel cutoff, write-offs outside the Pulse grace). The third commit (wave 5b)
 carries the fixes after the wave-5 keeper audit (the judge's proofs are kept as `test/w5k-judge-h{1,2,3,4}.test.mjs`), an
 internal review of those fixes, the keeper's side of the wave-5b contracts and the 4663 urgent gas ceiling (see "What
-changed since f30a9d0"). It holds NO on-chain rights: every call it makes is one
+changed since f30a9d0"). The fourth commit (wave 5b-2) carries the fixes from a review before wave 5b: the kill switch at every
+send point, an alert lifecycle in which every key is cleared only by a read of its condition, one position-index refresh shared by
+the lanes, the bridge incident wording (void is the response, a hold only delays) and a stock-feed silence alert (see "What changed
+since c6603c7"). It holds NO on-chain rights: every call it makes is one
 anyone may make (the beta gives it no Allocator keeper role and no guardian key; the Safe is the Allocator's freezer).
 It is REPORT-ONLY by default: without `--execute` it reads the chain and writes alerts and state, and sends nothing.
 What a panel should attack first is the "Not proven" list at the end.
@@ -120,6 +123,60 @@ none it only marks (and earns the chip), unless a sleeve's standing bid has room
 Every signed transaction is written to `state/tx/<nonce>.json` before it is broadcast and cleared once the chain settles that nonce. The next
 send settles the journal first: mined clears it, an open one goes out again as the same signed bytes and new sends wait. Each step is appended to
 `state/journal.jsonl`.
+
+## What changed since c6603c7
+
+A review before wave 5b checked the request for this commit against the code and found four places where the keeper did less than
+its README and the request said. Each was reproduced first: every new test below fails on the code of c6603c7 and passes here (bar
+bridge case (d), which already held and is now pinned). The keeper also follows two changes in the wave-5b contracts snapshot (the
+bridge incident rule and the stock feeds' 5-day maxAge). `npm test`: 229 tests (211 at c6603c7). Code changed only in the keeper
+(`keeper.mjs`, `lib/`); config keys added: `STOCKS.feedWarnHours` (25), `STOCKS.feedCriticalHours` (49), both optional.
+
+* **Kill switch at every send point** (P7, `test/w5k-stop.test.mjs`). On c6603c7 the bridge auto-claim settled the send journal
+  under the send lock only (outside `act()`/`send()`), so an open intent was rebroadcast with `state/STOP` present, and
+  `sendProvider`/`guardedSigner` signed and broadcast with STOP present when called directly. Now `lib/state.mjs stopped()` is checked
+  at every choke point: the one broadcast path `sendProvider.sendTransaction` (new sends, replacements, cancels, rebroadcasts), the
+  signer `guardedSigner.sendTransaction` (refused as a fee refusal, so `send()` returns it skipped and the skip alert speaks), the fee
+  `bump`, `journal.settleIntents` (receipts are still read and settled; the rebroadcast is held and journalled `rebroadcast-held`) and
+  `orders.pay` before anything is read or signed. A send-site fixture counts every `sendTransaction(`, `signTransaction(`,
+  `_signTypedData(`, `rebroadcast(`, `.submit(`, `settleIntents(` and `act(ctx` in `keeper.mjs` + `lib/`, each annotated with its
+  choke point: a new site fails the test until it is reviewed and added.
+* **Alert lifecycle** (`test/w5k-alert-keys.test.mjs`). Every alert key is cleared only by a read of its own condition, by the module
+  that owns it. On c6603c7: `feeds-permit2-unapproved` (raised by the feeds, seats and 4663 feed loops) was cleared only by the feeds
+  loop's settle, on passes that never read the allowance, and on 4663 never; one `state-unreadable` key for every file was never
+  cleared; `cannot-close-*` and the depth failure keys were never cleared; `send-skipped` was cleared by a routine landed send; order
+  and answer keys were kept forever. Now: `feeds-permit2-unapproved` is cleared by an allowance read that covers the cost, from
+  whichever loop asks; `feeds-order-*` / `feeds-answer-*` at the end of `advanceOrders` by its read of `orders.json` (lost: while a lost
+  order stands; refused: while a held order of that purpose stands; unpaid: an event, cleared by the next read; answer-failed: while an
+  open order has a failed child of that role); `state-unreadable-<file>` per file, cleared by the next good read of THAT file (any loop;
+  a later failed read in the same pass keeps it); `cannot-close-<id>` settled by the positions pass, held for positions it did not read
+  (an unpriced type's); the depth keys (`depth-sampler-reverted`, `-round-read-failed`, `-poke-failed`, `-proof-late`,
+  `-proof-failed-<feed>`, `-prove-now-failed`) each by the success that answers it; `send-skipped` by a landed URGENT send only
+  (`send-stuck` still by any landed send: the nonce moved, which is its condition); `bridge-watch-off` at a start whose config runs the
+  watcher. The key fixture extracts every key raised in `keeper.mjs` + `lib/` (literal and template prefixes) and compares it with a
+  list of ~120 keys, each naming the file that clears it, a literal that must exist there and the read that clears it: a new key with no
+  clear path, a listed key no longer raised, or a vanished clear site fails the test.
+* **One index refresh shared by the lanes** (`test/w5k-index.test.mjs`). On 4663 the positions (home), stocks and 4663 feed lanes each
+  call `loadIndex`; on c6603c7 three concurrent calls each paged the Ledger's logs (every range read three times) and each wrote
+  `index-<ledger>.json` across its awaits. Now `loadIndex` is single-flight on the context and `refreshIndex` single-flight per index
+  file: callers share the refresh in flight; `resetIndex` refuses while a refresh of that file runs; each chunk is written atomically.
+* **Bridge incident wording** (`test/w5k-bridge-r3.test.mjs`), following the wave-5b contracts snapshot. (a) The waiting-forged-packet
+  alert no longer offers a hold as the equal of `voidPayload`: void is the response; a hold only DELAYS (when it ends the payload QUEUES
+  for the path's delay D, and its claim must be cancelled within D); the held-forgery and held-honest texts say the same. (b) The forged
+  Received, forged Queued, verified-forged and breaker alerts name the VOID SWEEP (void every stored payload no peer `Sent` matches)
+  before ANY reopening (UNPAUSE, a SET_PATH, a SET_DELAY); the breaker procedure is pause -> cancelClaim the unmatched -> the sweep ->
+  BATCH[RESET_BREAKER, UNPAUSE]. (c) The bulk cutoff named in every forged-Queued alert is the FIRST forged pending Queued's time on that
+  path (it was the alerted Queued's own time, which let earlier forged claims through). (d) An honest held message that queues when its
+  hold ends is matched to its `Sent` (no forged or stuck critical; `bridge-held` only while held) and auto-claimed after D: no code
+  change was needed, the test pins it.
+* **`stocks-feed-silent-<type>`** (`test/w5k-stock-feed.test.mjs`). The stock feeds' maxAge is now 5 days, so staleness no longer
+  catches a dead feed. A type's Chainlink feed (the round time behind `MarketHoursFeed.latestValue`) silent more than
+  `STOCKS.feedWarnHours` (25) hours of MARKET-SESSION time (MarketCalendar; weekends, holidays and closed hours do not count) is warn,
+  more than `STOCKS.feedCriticalHours` (49) critical. Session time since the round is sampled from the calendar once per new round
+  (every 30 min), then accumulated per pass while open (`state/stocks-feed.json`). Cleared only by a pass that read a NEWER round; a
+  feed that answers 0 is warned as unreadable. The test drives a measured cadence (one print per session at a random time, a quarter of
+  them just after the close, as SPY's quietest days: within 24 h of session time) for 4 weeks without an alert; a feed that stops warns
+  past 25 h and goes critical past 49 h of session time, and clears on the next round.
 
 ## What changed since f30a9d0
 
@@ -235,6 +292,16 @@ Every v2 contract is the deployed bytecode, except where listed under "Only agai
   `LedgerSettlement.writeOff`). Not proven against a real chain: reorg rewind on a real 4663/mainnet reorg, `EndpointV2.inboundNonce` historical reads on the 4663 public RPC (no
   archive: the verified-nonce proof then falls back to the logs with warn `bridge-index-unchecked-*`), the deploy-block search on a
   non-archive peer, lanes under real RPC latency.
+* **Changes since c6603c7 on a fork.** The kill switch, alert lifecycle and shared index changes passed the fork suites (`e2e.mjs`
+  10/10, `duties.mjs` 28/28) against the wave-5b contracts snapshot. The bridge incident wording and `stocks-feed-silent-*` are unit
+  and property tests only: the fork harness covers neither the bridge watcher nor the 4663 stocks loop (bridge off, mainnet beta).
+* **Lanes are not fully independent.** They share one provider and its pin, and on 4663 one public rate-limited RPC: concurrency adds
+  load there. The stocks and peer lanes read home logs through the shared index refresh, so a slow home log read holds them while
+  they wait for it (bounded by `READ_TIMEOUT_SECONDS` per read; the loop deadline alert speaks).
+* **The alert key fixture** proves that each key has a clear site (a literal that must exist in the owning file) and states the read
+  that clears it; that the clear site's pass really read the condition is behaviour-tested only for the keys changed since c6603c7
+  (permit2, orders/answers, state-unreadable, cannot-close, depth, send-skipped). The send-site fixture is a text search of the
+  listed call forms: a send reached by another form would not be counted.
 * **A source RPC lagging more than `peerLagSeconds` + the delivery time** can still make an honest transfer look forged (#1 residual):
   give the peer two RPCs (the highest head wins) or raise `peerLagSeconds` (it delays a forgery-by-absence verdict by as much).
 * **Holds and voids on a lone log RPC**: `HoldPlaced`/`Voided` move no counter and the endpoint has no count of them; with one log RPC

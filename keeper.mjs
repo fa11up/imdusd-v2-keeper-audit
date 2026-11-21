@@ -32,7 +32,7 @@ import { clearLost } from "./lib/orders.mjs";
 import { runPeg } from "./lib/peg.mjs";
 import { runPositions } from "./lib/positions.mjs";
 import { runSeats } from "./lib/seats.mjs";
-import { bindKeyChain, isUnreadable, reportStateDir, takeKeyLock, takeLock } from "./lib/state.mjs";
+import { bindKeyChain, drainReadOk, isUnreadable, reportStateDir, takeKeyLock, takeLock } from "./lib/state.mjs";
 import { foreignPending, keeperSigner, refuseGuardianKey, sendUrls } from "./lib/tx.mjs";
 import { runWatch } from "./lib/watch.mjs";
 
@@ -115,12 +115,14 @@ export async function runRound(ctx, only = null) {
       // A loop that throws every pass is a keeper doing nothing: after a few in a row it is an incident, not a log line.
       ctx.fails[l.name] = (ctx.fails[l.name] ?? 0) + 1;
       // A state file that cannot be read holds what depends on it until a human acts: say so at once, not after five passes.
-      if (isUnreadable(e)) await ctx.alerts.raise("critical", "state-unreadable", e.message).catch(() => {});
+      if (isUnreadable(e)) await ctx.alerts.raise("critical", `state-unreadable-${e.file}`, e.message).catch(() => {});
       if (ctx.fails[l.name] >= (ctx.cfg.LOOP_FAIL_ALERT ?? 5)) {
         await ctx.alerts.raise("critical", `loop-failing-${l.name}`, `the ${l.name} loop has failed ${ctx.fails[l.name]} times in a row: ${String(e.message).slice(0, 200)}`).catch(() => {});
       }
     } finally {
       clearInterval(watchdog);
+      // A safety file read successfully (by any loop) clears its own unreadable alert, and only that (a review before wave 5b).
+      for (const f of drainReadOk()) await ctx.alerts.settle(`state-unreadable-${f}`, new Set()).catch(() => {});
       if (ctx.slow[l.name] && Date.now() - started < deadline * 1000) {
         ctx.slow[l.name] = false;
         await ctx.alerts.settle(`loop-slow-${l.name}`, new Set()).catch(() => {});
@@ -187,7 +189,7 @@ export async function makeContext(cfg, { execute = false, log = console.log, onl
   if (watchOff) {
     stamped(`WARNING ${watchOff}`);
     await ctx.alerts.raise("critical", "bridge-watch-off", watchOff).catch(() => {});
-  }
+  } else await ctx.alerts.settle("bridge-watch-off", new Set()).catch(() => {}); // the start re-read the config: the watcher runs
   if (!main) {
     // The plane is paid on Ethereum: the 4663 keeper reads its IMD and Permit2 there and never sends there (lib/orders.mjs).
     if (ctx.peers[1]) ctx.pay = { provider: ctx.peers[1], chainId: 1 };
