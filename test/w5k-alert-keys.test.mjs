@@ -29,7 +29,7 @@ const KEYS = {
   ...Object.fromEntries(["bridge-breaker-tripped-", "bridge-bulk-cancel-", "bridge-cancelled-honest-", "bridge-claim-late-", "bridge-claim-mismatch-", "bridge-claim-refused-", "bridge-claim-unread-",
     "bridge-claims-closed-", "bridge-claims-unread-", "bridge-counters-", "bridge-forged-", "bridge-head-stalled-", "bridge-held-", "bridge-index-gap-", "bridge-index-unchecked-", "bridge-paused-",
     "bridge-paused-unread-", "bridge-peer-fromblock-", "bridge-peer-unread-", "bridge-queued-forged-", "bridge-queued-unverified-", "bridge-reindex-", "bridge-reorg-", "bridge-stuck-", "bridge-supply-",
-    "bridge-supply-unread-", "bridge-unverified-", "bridge-verified-forged-", "bridge-verified-unverified-", "bridge-voided-", "bridge-voided-honest-"].map((k) =>
+    "bridge-supply-unread-", "bridge-unverified-", "bridge-verified-forged-", "bridge-verified-replay-", "bridge-not-wired-", "bridge-verified-unverified-", "bridge-voided-", "bridge-voided-honest-"].map((k) =>
     [k, S("lib/bridge.mjs", 'settle("bridge-"', "a COMPLETE watcher pass (settle skipped otherwise); unread conditions held per key (heldKeys/heldPrefixes)")])),
   "bridge-watch-off": S("keeper.mjs", 'settle("bridge-watch-off"', "a start whose config runs the watcher and auto-claim"),
   "cannot-close-": S("lib/positions.mjs", 'settle("cannot-close-"', "the position re-read this pass (unpriced types' positions are not read: held)"),

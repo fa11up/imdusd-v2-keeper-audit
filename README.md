@@ -19,7 +19,9 @@ internal review of those fixes, the keeper's side of the wave-5b contracts and t
 changed since f30a9d0"). The fourth commit (wave 5b-2) carries the fixes from a review before wave 5b: the kill switch at every
 send point, an alert lifecycle in which every key is cleared only by a read of its condition, one position-index refresh shared by
 the lanes, the bridge incident wording (void is the response, a hold only delays) and a stock-feed silence alert (see "What changed
-since c6603c7"). It holds NO on-chain rights: every call it makes is one
+since c6603c7"). The fifth commit (wave 5b-3) carries the fixes from a second review before wave 5b: the stock-feed silence
+alert redesigned on market-week time with per-ticker thresholds, STOP re-read right before a payment is signed and handed over, a
+replay check before any void, and the bridge's final launch rule (see "What changed since 2b112f6"). It holds NO on-chain rights: every call it makes is one
 anyone may make (the beta gives it no Allocator keeper role and no guardian key; the Safe is the Allocator's freezer).
 It is REPORT-ONLY by default: without `--execute` it reads the chain and writes alerts and state, and sends nothing.
 What a panel should attack first is the "Not proven" list at the end.
@@ -123,6 +125,49 @@ none it only marks (and earns the chip), unless a sleeve's standing bid has room
 Every signed transaction is written to `state/tx/<nonce>.json` before it is broadcast and cleared once the chain settles that nonce. The next
 send settles the journal first: mined clears it, an open one goes out again as the same signed bytes and new sends wait. Each step is appended to
 `state/journal.jsonl`.
+
+## What changed since 2b112f6
+
+A second review before wave 5b found three places where the keeper could not meet the property the request states. Each was
+reproduced first: every new test fails on the code of 2b112f6 and passes here. The keeper also follows the bridge's final launch
+rule in the wave-5b contracts snapshot and the stock feeds' maxAge of 6 days there. `npm test`: 238 tests (229 at 2b112f6). Code
+changed only in `lib/` (bridge, orders, stocks, and the `imdUSD.bridge()` read added to the usd ABI in deployment and robinhood).
+
+* **`stocks-feed-silent-<type>`, redesigned** (`test/w5k-stock-feed.test.mjs`). The 2b112f6 design measured NYSE session time
+  (25 h warn / 49 h critical); a SPY feed dead after Thursday 20:00 New York accrued only 19.5 session hours before its maxAge
+  unpriced it, so no alert of any kind fired while it still priced, and no session-time threshold can be both quiet on the honest
+  cadence (worst ~24 h) and early. Now the age is CALENDAR time inside the 24/5 MARKET WEEK the feeds print in (Sunday 20:00 to
+  Friday 20:00 New York, DST from `Intl`; a weekday with no regular session per the MarketCalendar is closed from 20:00 the evening
+  before). Thresholds are per ticker from the measured cadence (honest worst market-week age over 108 sessions): warn at
+  max(1.5 x honest, honest + 1 h), critical at max(2 x honest, honest + 2 h), critical capped at 34 h and warn at least 4 h under it.
+  SPY and AAPL 30/34 h, SGOV 29.9/34, TSLA 27.9/34, NVDA 13.1/17.4, USO 8.3/11, SPCX 7.2/9.6, CRCL 5.0/6.6, MSTR 4.1/5.4 (warn /
+  critical); an unknown ticker uses SPY's. In any 144 calendar hours (the 6-day maxAge) at most 72 are closed (a weekend plus a
+  holiday), so a dead feed is critical well before it unprices: 37.5 h earlier at the worst death time measured (Wednesday
+  2026-11-25 10:00 New York, before Thanksgiving), scanning every hour of every week to the end of 2027. Cleared only by a pass that
+  read a newer round. Config: `STOCKS.feedCadenceHours` (per-ticker honest worst, overrides), `STOCKS.feedCriticalCapHours` (34),
+  `STOCKS.feedMaxAgeHours` (144, the contract's maxAge); `STOCKS.feedWarnHours` / `feedCriticalHours` from 2b112f6 are gone. The
+  tests use the NYSE calendar of the contracts' `DeployConfig` (closed and early-close days, Thanksgiving with its Friday half day,
+  Christmas 2026 on a Friday, New Year, MLK, Good Friday, July 4) and a heartbeat model (one print at 20:00 New York on the eve of
+  each trading day, none before a holiday) as the honest cadence for the quiet tickers: SPY, AAPL and SGOV never alert over the
+  model's span, each ticker's measured worst never alerts, and every ticker is critical at least 36 h before its maxAge dying at
+  every hour of the closure weeks.
+* **STOP inside a payment** (`test/w5k-stop.test.mjs`, +2). On 2b112f6 a `state/STOP` created during the allowance read still let the
+  payment be signed and handed over. `stopped()` is now re-read right before `signPayment` and right before `plane.submit` (after the
+  latch: the permit then expires unused and the chain ends the order unpaid); the send-site test requires a `stopped()` within the
+  three lines before each of them.
+* **Replay check before voiding** (`test/w5k-bridge-replay.test.mjs`). A void is by hash on every nonce and path, so voiding a forged
+  REPLAY (a verified payload whose hash an honest `Sent` has at another nonce) would refuse the honest transfer too; on 2b112f6 the
+  watcher advised "voidPayload(hash) NOW" for it. The watcher now looks for such a twin first: critical
+  `bridge-verified-replay-<chain>-<nonce>`: do NOT void; `hold(eid, nonce)` now, then `RELEASE(eid, nonce, 0)`, a DROP, proposed
+  within 24 h of the hold (the held payload never runs at that nonce; any other payload there runs as a claim). The held-forgery
+  alert does the same for a held replay.
+* **The bridge's final launch rule** (same test). The void sweep text, everywhere it appears (forged Received / Queued / verified,
+  breaker), is PER NONCE: each stored payload against the peer's `Sent` at its own nonce; matching no honest `Sent`:
+  `voidPayload(hash)`; a replay of an honest `Sent` from another nonce: hold + RELEASE(eid, nonce, 0), never void. The reopening list
+  names SET_BRIDGE first (SET_BRIDGE, UNPAUSE, a SET_PATH, a SET_DELAY raising C). Before SET_BRIDGE inbound messages queue and
+  a claim reverts in mint: the auto-claim reads `imdUSD.bridge()` and, while it does not name this bridge, sends no claim and raises
+  info `bridge-not-wired-<chain>` (unreadable: warn, no claim); honest Queued messages are matched as usual and claimed in the first
+  pass after the wiring and their maturity. Every other bridge view, event and the claim the keeper calls are unchanged.
 
 ## What changed since c6603c7
 
@@ -295,6 +340,13 @@ Every v2 contract is the deployed bytecode, except where listed under "Only agai
 * **Changes since c6603c7 on a fork.** The kill switch, alert lifecycle and shared index changes passed the fork suites (`e2e.mjs`
   10/10, `duties.mjs` 28/28) against the wave-5b contracts snapshot. The bridge incident wording and `stocks-feed-silent-*` are unit
   and property tests only: the fork harness covers neither the bridge watcher nor the 4663 stocks loop (bridge off, mainnet beta).
+* **Changes since 2b112f6 on a fork: none run.** They touch the 4663 stocks loop, the bridge watcher's alerts and claims, and the
+  payment's STOP checks. The fork harness covers neither the bridge watcher nor the 4663 stocks loop (bridge off, mainnet beta) and
+  pays no real plane: unit and property tests only.
+* **The stock feed cadence.** The per-ticker thresholds come from about 5 months of measured prints (no Thanksgiving or Christmas week
+  in the data); holidays and early closes come from the NYSE calendar model (the contracts' `DeployConfig`), and the quiet tickers'
+  honest cadence in the tests is a heartbeat model, not observed prints. A ticker added later starts on SPY's thresholds until
+  measured; a busy ticker's thresholds are a few hours, so a genuine quiet spell longer than twice its measured worst warns.
 * **Lanes are not fully independent.** They share one provider and its pin, and on 4663 one public rate-limited RPC: concurrency adds
   load there. The stocks and peer lanes read home logs through the shared index refresh, so a slow home log read holds them while
   they wait for it (bounded by `READ_TIMEOUT_SECONDS` per read; the loop deadline alert speaks).

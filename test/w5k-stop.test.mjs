@@ -89,3 +89,35 @@ test("STOP: a quoted order is not signed or paid", async () => {
   assert.equal(submitted, 0);
   assert.equal(loadOrders()[0].stage, "quoted");
 });
+
+test("STOP checked immediately before every payment signature and every hand-over to the plane (orders.mjs source)", () => {
+  const lines = readFileSync(join(here, "lib/orders.mjs"), "utf8").split("\n");
+  const sites = lines.map((l, i) => [l, i]).filter(([l]) => /await signPayment\(|plane\.submit\(/.test(l));
+  assert.equal(sites.length, 2);
+  for (const [l, i] of sites) assert.ok(lines.slice(Math.max(0, i - 3), i).some((x) => x.includes("stopped()")), `no STOP check right before: ${l.trim().slice(0, 80)}`);
+});
+
+test("STOP set DURING the payment's last reads (the allowance read): nothing is signed or handed to the plane", async () => {
+  rmSync(process.env.STATE_DIR, { recursive: true, force: true });
+  process.env.PLANE_BEARER = "x";
+  const { writeState } = await import("../lib/state.mjs");
+  const { advanceOrders } = await import("../lib/orders.mjs");
+  const { IMD } = await import("../lib/x402.mjs");
+  const PAY_TO = "0x4e0fa57bde726079356537e2f34d671e9f41adbc";
+  writeState("orders.json", { list: [{ key: "k", purpose: "fall", action: "oracle.request", stage: "quoted", planeOrder: "po-1", at: new Date().toISOString(), questions: [{ role: "price", leaf: "0x01" }] }] });
+  const wallet = new Wallet(KEY);
+  let signatures = 0, submitted = 0;
+  const real = wallet._signTypedData.bind(wallet);
+  wallet._signTypedData = async (...a) => { signatures++; return real(...a); };
+  const ch = { resource: {}, resourceUrl: "https://api.imd.fun/requests/po-1/submit", requesterScopeHash: "ab".repeat(32),
+    accepts: [{ scheme: "exact", network: "eip155:1", amount: "500000000000000000", asset: IMD, payTo: PAY_TO, maxTimeoutSeconds: 300 }],
+    quote: { id: "po-1", quoteHash: "cd".repeat(32), action: "oracle.request", expiresAt: 1, payment: { network: "eip155:1", asset: IMD, amount: "500000000000000000", payTo: PAY_TO } } };
+  const E = BigNumber.from(10).pow(18);
+  const ctx = { execute: true, cfg: { PLANE: { payTo: PAY_TO }, IMD: { dailyCap: 1000 } }, signer: wallet, keeperAddress: wallet.address, log() {}, planeState: { ok: true },
+    provider: { getBlock: async () => ({ number: 1, timestamp: Math.floor(Date.now() / 1000) }), getBalance: async () => E, getGasPrice: async () => BigNumber.from(1e9) },
+    book: { token: () => ({ balanceOf: async () => E.mul(1000), allowance: async () => { STOP(); return E.mul(1000); } }) },
+    planeClient: { challenge: async () => ({ status: 402, body: ch }), submit: async () => { submitted++; return { status: 200, body: {} }; } }, alerts: { raise: async () => {}, settle: async () => {} } };
+  await advanceOrders(ctx);
+  assert.equal(signatures, 0, "a payment was signed after STOP was set");
+  assert.equal(submitted, 0, "a payment was handed to the plane after STOP was set");
+});
